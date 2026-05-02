@@ -41,8 +41,18 @@ export class SidebarProvider {
      * resyncs don't re-render the UI when nothing actually changed.
      */
     _lastPostedJson = null;
+    /**
+     * Optional hook invoked after every successful reload() (after postState).
+     * Used by extension.ts to keep derived UI (e.g. bottom status bar item)
+     * in sync without threading a callback through every command.
+     */
+    _onDidReload;
     constructor(ctx) {
         this.ctx = ctx;
+    }
+    /** Subscribe to post-reload notifications. Only one listener allowed. */
+    setOnDidReload(cb) {
+        this._onDidReload = cb;
     }
     get accounts() {
         return this._accounts;
@@ -116,6 +126,14 @@ export class SidebarProvider {
         finally {
             this._loading = false;
             this.postState();
+            // Notify extension.ts subscribers (status bar, etc.) AFTER the
+            // webview has been updated so they see the freshest accounts list.
+            try {
+                this._onDidReload?.();
+            }
+            catch (e) {
+                (0, log_1.log)('SidebarProvider._onDidReload threw:', e?.message || e);
+            }
         }
     }
     postStatus(text, tone = 'info') {
@@ -221,6 +239,9 @@ export class SidebarProvider {
                 return;
             case 'batchImport':
                 void vscode.commands.executeCommand('windsurfSwitch.batchImport');
+                return;
+            case 'exportAccounts':
+                void vscode.commands.executeCommand('windsurfSwitch.exportAccounts');
                 return;
             case 'submitAdd':
                 void vscode.commands.executeCommand('windsurfSwitch._submitAddFromModal', { email: msg.email, password: msg.password });
@@ -446,6 +467,9 @@ export class SidebarProvider {
         </button>
         <button class="btn act" data-cmd="batchImport" data-tip="批量导入">
             <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2v8.5M4.5 7 8 10.5 11.5 7M2.5 13.5h11"/></svg>
+        </button>
+        <button class="btn act" data-cmd="exportAccounts" data-tip="导出全部账号到剪贴板">
+            <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 13.5V5M4.5 8.5 8 5l3.5 3.5M2.5 2.5h11"/></svg>
         </button>
         <button class="btn act" data-cmd="refreshAll" data-tip="刷新全部 Plan / Quota">
             <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M13.5 8a5.5 5.5 0 1 1-1.6-3.9M13.5 2v3h-3"/></svg>

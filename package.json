@@ -2,7 +2,7 @@
   "name": "windsurf-switch",
   "displayName": "Windsurf Switch",
   "description": "Windsurf 多账号无感切换 — 卡片化 sidebar、不弹浏览器静默换号、跨窗口同步、一键打补丁；账号库与桌面版 windsurf-manager-desktop 共享。Windows / macOS / Linux 通用。",
-  "version": "1.1.1",
+  "version": "1.2.0",
   "publisher": "lango",
   "engines": {
     "vscode": "^1.74.0"
@@ -34,6 +34,7 @@
           "type": "webview",
           "id": "windsurfSwitch.sidebar",
           "name": "",
+          "icon": "resources/icon.svg",
           "contextualTitle": "Windsurf Switch"
         }
       ]
@@ -120,6 +121,24 @@
         "command": "windsurfSwitch.listAccounts",
         "title": "账号列表 (Output)",
         "category": "Windsurf Switch"
+      },
+      {
+        "command": "windsurfSwitch.exportAccounts",
+        "title": "导出全部账号到剪贴板",
+        "category": "Windsurf Switch",
+        "icon": "$(clippy)"
+      },
+      {
+        "command": "windsurfSwitch.clearExpiredAccounts",
+        "title": "清理已到期账号",
+        "category": "Windsurf Switch",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "windsurfSwitch.checkUpdate",
+        "title": "检查更新",
+        "category": "Windsurf Switch",
+        "icon": "$(cloud-download)"
       },
       {
         "command": "windsurfSwitch.showOutput",
@@ -268,6 +287,21 @@
           "command": "windsurfSwitch.reloadSidebar",
           "when": "view == windsurfSwitch.sidebar",
           "group": "overflow@3"
+        },
+        {
+          "command": "windsurfSwitch.exportAccounts",
+          "when": "view == windsurfSwitch.sidebar",
+          "group": "overflow@4"
+        },
+        {
+          "command": "windsurfSwitch.clearExpiredAccounts",
+          "when": "view == windsurfSwitch.sidebar",
+          "group": "overflow@5"
+        },
+        {
+          "command": "windsurfSwitch.checkUpdate",
+          "when": "view == windsurfSwitch.sidebar",
+          "group": "overflow@6"
         }
       ]
     }

@@ -49,6 +49,7 @@ const windsurfApi_1 = __importStar(require("./windsurfApi"));
 const windsurfPatcher_1 = __importStar(require("./windsurfPatcher"));
 const crypto = __importStar(require("crypto"));
 const fs = __importStar(require("fs"));
+const https = __importStar(require("https"));
 const path = __importStar(require("path"));
 const autoSwitch_1 = __importStar(require("./autoSwitch"));
 const smartSwitch_1 = __importStar(require("./smartSwitch"));
@@ -636,6 +637,74 @@ function clearSmartHistory(ctx) {
 }
 let autoSwitch;
 let sidebar;
+// ---------------------------------------------------------------------------
+// Bottom status bar — single item, click → switchAccount QuickPick.
+// Per-axis quota color is achieved with emoji circles (🔴🟡🟢⚪) which carry
+// their own intrinsic color from the OS emoji font, independent of the
+// item's foreground color. So one item can still show two differently
+// colored dots side by side.
+// ---------------------------------------------------------------------------
+let statusBarItem;
+function initStatusBar(context) {
+    statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
+    statusBarItem.command = 'windsurfSwitch.switchAccount';
+    statusBarItem.name = 'Windsurf Switch';
+    context.subscriptions.push(statusBarItem);
+    updateStatusBar(context);
+}
+/**
+ * Emoji circle whose intrinsic color matches the sidebar's `quotaTone()`
+ * thresholds (≤20 红 · ≤60 黄 · 其余 绿). Unknown quota → ⚪.
+ */
+function quotaDot(pct) {
+    if (typeof pct !== 'number') {
+        return '⚪';
+    }
+    if (pct <= 20) {
+        return '🔴';
+    }
+    if (pct <= 60) {
+        return '🟡';
+    }
+    return '🟢';
+}
+/**
+ * Refresh the status-bar text from the current account id + sidebar's cached
+ * accounts list. Safe to call any time — no-ops if the bar isn't initialized
+ * (e.g. activation failed early).
+ */
+function updateStatusBar(context) {
+    if (!statusBarItem) {
+        return;
+    }
+    try {
+        const id = getCurrentAccountId(context);
+        const accounts = sidebar?.accounts || [];
+        const acc = id ? accounts.find(a => a.id === id) : undefined;
+        if (!acc) {
+            statusBarItem.text = '$(account) Windsurf';
+            statusBarItem.tooltip = `${getActiveEmail(context) || '未登录'}\n点击切换账号`;
+            statusBarItem.show();
+            return;
+        }
+        const d = typeof acc.dailyRemainPct === 'number' ? acc.dailyRemainPct : null;
+        const w = typeof acc.weeklyRemainPct === 'number' ? acc.weeklyRemainPct : null;
+        const dStr = d === null ? '-' : `${d}%`;
+        const wStr = w === null ? '-' : `${w}%`;
+        statusBarItem.text = `${quotaDot(d)} 日 ${dStr} · ${quotaDot(w)} 周 ${wStr}`;
+        const ttLines = [`Windsurf: ${acc.email}`];
+        if (acc.planName) {
+            ttLines.push(`Plan: ${acc.planName}`);
+        }
+        ttLines.push(`日: ${dStr}  ·  周: ${wStr}`);
+        ttLines.push('点击切换账号');
+        statusBarItem.tooltip = ttLines.join('\n');
+        statusBarItem.show();
+    }
+    catch (e) {
+        (0, log_1.log)('updateStatusBar failed:', e?.message || e);
+    }
+}
 function activate(context) {
     (0, log_1.log)(`Windsurf Switch v${context.extension.packageJSON.version} activating on VS Code ${vscode.version}. Accounts file: ${(0, accountsStore_1.getAccountsFilePath)()}`);
     try {
@@ -672,6 +741,10 @@ function activate(context) {
         context.subscriptions.push(autoSwitch);
         registerCommands(context, sidebar);
         (0, log_1.log)('commands registered. Ready.');
+        // Bottom status bar — must come after sidebar exists; updates piggy-back
+        // on every sidebar.reload() via the onDidReload hook.
+        initStatusBar(context);
+        sidebar.setOnDidReload(() => updateStatusBar(context));
         // Auto-patch Windsurf core on startup so a fresh install doesn't
         // require the user to run "给 Windsurf 打补丁" by hand. Silent-fail:
         // if the app is read-only, or we're on a mismatched Windsurf version,
@@ -788,6 +861,9 @@ function registerCommands(context, sidebar) {
     sub.push(vscode.commands.registerCommand('windsurfSwitch.refreshAll', () => refreshAll(context, sidebar)));
     sub.push(vscode.commands.registerCommand('windsurfSwitch.fixCredentialsById', (accountId) => fixCredentialsById(sidebar, accountId)));
     sub.push(vscode.commands.registerCommand('windsurfSwitch.listAccounts', () => cmdListAccounts()));
+    sub.push(vscode.commands.registerCommand('windsurfSwitch.exportAccounts', () => cmdExportAccounts()));
+    sub.push(vscode.commands.registerCommand('windsurfSwitch.clearExpiredAccounts', () => cmdClearExpiredAccounts(context, sidebar)));
+    sub.push(vscode.commands.registerCommand('windsurfSwitch.checkUpdate', () => cmdCheckUpdate(context)));
     // --- Smart switch / auto switch ---
     sub.push(vscode.commands.registerCommand('windsurfSwitch.smartSwitch', () => cmdSmartSwitch(context, sidebar)));
     sub.push(vscode.commands.registerCommand('windsurfSwitch._refreshCurrentSynced', () => cmdRefreshCurrentSynced(context, sidebar)));
@@ -1494,6 +1570,184 @@ async function cmdListAccounts() {
     }
     for (const a of accounts) {
         (0, log_1.log)(`- ${a.email}`, `[${a.authProvider}]`, a.displayName ? `(${a.displayName})` : '', `plan=${a.planName}`, `d=${a.dailyRemainPct ?? '-'}%`, `w=${a.weeklyRemainPct ?? '-'}%`, a.remark ? `note=${a.remark}` : '', a.lastQueryTime ? `updated=${a.lastQueryTime}` : '');
+    }
+}
+// ---------------------------------------------------------------------------
+// Export accounts to clipboard — `email:password\n` lines, ready to paste
+// back into "批量导入" on another machine. Single batched DPAPI call.
+// ---------------------------------------------------------------------------
+async function cmdExportAccounts() {
+    const records = await (0, accountsStore_1.loadAccountsEncrypted)();
+    if (records.length === 0) {
+        vscode.window.showInformationMessage('没有账号可导出。');
+        return;
+    }
+    let passwords;
+    try {
+        passwords = await (0, dpapi_1.dpapiUnprotectBatch)(records.map(r => r.passwordProtected || ''));
+    }
+    catch (e) {
+        vscode.window.showErrorMessage(`解密失败：${e?.message || e}`);
+        (0, log_1.log)('exportAccounts: dpapi batch failed -', e?.message || e);
+        return;
+    }
+    const lines = [];
+    let skipped = 0;
+    for (let i = 0; i < records.length; i++) {
+        const r = records[i];
+        const pwd = passwords[i] || '';
+        if (!r.email || !pwd) {
+            skipped++;
+            continue;
+        }
+        lines.push(`${r.email}:${pwd}`);
+    }
+    if (lines.length === 0) {
+        vscode.window.showWarningMessage('账号都没有密码字段，无法导出（请用「修复凭据」补充密码）。');
+        return;
+    }
+    await vscode.env.clipboard.writeText(lines.join('\n'));
+    const tail = skipped > 0 ? `（跳过 ${skipped} 个无密码账号）` : '';
+    // Warning severity — plaintext credentials live on the OS clipboard now,
+    // and on macOS / Windows can sync to other devices via cloud clipboard.
+    vscode.window.showWarningMessage(`已导出 ${lines.length} 个账号到剪贴板${tail}。⚠️ 含明文密码，使用后请复制其他内容覆盖。`);
+    (0, log_1.log)(`exportAccounts: ${lines.length} ok, ${skipped} skipped`);
+}
+// ---------------------------------------------------------------------------
+// Clear expired accounts — subscription period (`expiresAt`, ISO from plan
+// API) has elapsed. Free accounts without an expiresAt are NOT touched.
+// ---------------------------------------------------------------------------
+async function cmdClearExpiredAccounts(context, sidebar) {
+    const accounts = await (0, accountsStore_1.loadManagerAccounts)();
+    const now = Date.now();
+    const isExpired = (a) => {
+        if (!a.expiresAt) {
+            return false;
+        }
+        const t = Date.parse(a.expiresAt);
+        return Number.isFinite(t) && t < now;
+    };
+    const targets = accounts.filter(isExpired);
+    if (targets.length === 0) {
+        vscode.window.showInformationMessage('没有已到期的账号。');
+        return;
+    }
+    const preview = targets.slice(0, 5).map(a => a.email).join('\n  · ');
+    const more = targets.length > 5 ? `\n  · …还有 ${targets.length - 5} 个` : '';
+    const ans = await vscode.window.showWarningMessage(`将删除 ${targets.length} 个已到期账号：\n\n  · ${preview}${more}\n\n此操作不可撤销。`, { modal: true }, '删除');
+    if (ans !== '删除') {
+        return;
+    }
+    let ok = 0;
+    let fail = 0;
+    const deletedIds = new Set();
+    for (const a of targets) {
+        try {
+            await (0, accountsStore_1.deleteAccount)(a.id);
+            await (0, tokens_1.invalidateToken)(context, a.id);
+            await (0, memoryCreds_1.removeCreds)(a.id);
+            deletedIds.add(a.id);
+            ok++;
+        }
+        catch (e) {
+            fail++;
+            (0, log_1.log)(`clearExpired: delete ${a.email} failed -`, e?.message || e);
+        }
+    }
+    // If the active account was among the deletions, wipe currentAccountId /
+    // activeEmail so the sidebar / status bar don't keep pointing at a
+    // tombstone. Mirrors the explicit clear path used by logout flows.
+    const currentId = getCurrentAccountId(context);
+    if (currentId && deletedIds.has(currentId)) {
+        await clearCurrentAccount(context, 'clearExpiredAccounts');
+    }
+    if (fail > 0) {
+        vscode.window.showWarningMessage(`已清理 ${ok} 个，${fail} 个失败。详情见日志。`);
+    }
+    else {
+        statusOk(`已清理 ${ok} 个到期账号`);
+    }
+    await sidebar.reload();
+}
+// ---------------------------------------------------------------------------
+// Check for updates — query GitHub Releases API and compare with the
+// version baked into package.json. Manual trigger only.
+// ---------------------------------------------------------------------------
+function compareVersions(a, b) {
+    const pa = a.split('.').map(n => parseInt(n, 10) || 0);
+    const pb = b.split('.').map(n => parseInt(n, 10) || 0);
+    const len = Math.max(pa.length, pb.length);
+    for (let i = 0; i < len; i++) {
+        const da = pa[i] || 0;
+        const db = pb[i] || 0;
+        if (da !== db) {
+            return da < db ? -1 : 1;
+        }
+    }
+    return 0;
+}
+async function cmdCheckUpdate(context) {
+    const currentVersion = String(context.extension.packageJSON.version || '0.0.0');
+    const repoUrl = String(context.extension.packageJSON.repository?.url || '');
+    const m = repoUrl.match(/github\.com[:/]+([^/]+)\/([^/.]+)/);
+    if (!m) {
+        vscode.window.showWarningMessage('无法解析 repository.url，跳过更新检查');
+        return;
+    }
+    const owner = m[1];
+    const repo = m[2];
+    const apiUrl = `https://api.github.com/repos/${owner}/${repo}/releases/latest`;
+    try {
+        const data = await new Promise((resolve, reject) => {
+            const req = https.get(apiUrl, {
+                headers: {
+                    'User-Agent': `windsurf-switch/${currentVersion}`,
+                    'Accept': 'application/vnd.github+json'
+                }
+            }, res => {
+                // 200 is the only valid success path. 3xx (no follow) and 4xx/5xx
+                // are all treated as failures so the user gets an actionable
+                // message instead of a confusing JSON.parse error downstream.
+                if (res.statusCode !== 200) {
+                    res.resume();
+                    reject(new Error(`GitHub HTTP ${res.statusCode}`));
+                    return;
+                }
+                let body = '';
+                res.setEncoding('utf8');
+                res.on('data', chunk => body += chunk);
+                res.on('end', () => {
+                    try {
+                        resolve(JSON.parse(body));
+                    }
+                    catch (e) {
+                        reject(new Error(`GitHub 响应解析失败：${e?.message || e}`));
+                    }
+                });
+            });
+            req.on('error', reject);
+            req.setTimeout(10000, () => {
+                req.destroy(new Error('请求超时（10s）'));
+            });
+        });
+        const tag = String(data?.tag_name || '').replace(/^v/, '');
+        if (!tag) {
+            throw new Error('GitHub 响应缺 tag_name');
+        }
+        if (compareVersions(tag, currentVersion) <= 0) {
+            vscode.window.showInformationMessage(`已是最新版本 v${currentVersion}`);
+            return;
+        }
+        const action = await vscode.window.showInformationMessage(`Windsurf Switch 发现新版本 v${tag}（当前 v${currentVersion}）`, '查看 Release', '稍后');
+        if (action === '查看 Release') {
+            const url = String(data?.html_url || `https://github.com/${owner}/${repo}/releases/tag/v${tag}`);
+            void vscode.env.openExternal(vscode.Uri.parse(url));
+        }
+    }
+    catch (e) {
+        const msg = e?.message || String(e);
+        vscode.window.showWarningMessage(`检查更新失败：${msg}`);
+        (0, log_1.log)(`checkUpdate failed: ${msg}`);
     }
 }
 function isSwitchable(a) {
