@@ -147,7 +147,8 @@ Sidebar ━━━━━━━━━━━━━━━━━━━━━━━━
 | 文件 | 用途 | macOS / Linux | Windows |
 |---|---|---|---|
 | `accounts.json` | 加密的账号清单 | `~/Library/Application Support/windsurf-manager-desktop/` | `%APPDATA%\windsurf-manager-desktop\` |
-| `.cred.key` | AES 主密钥（mac/Linux） | 同上 | — |
+| VS Code SecretStorage | AES 主密钥（mac/Linux） | 系统钥匙串 / VS Code 密钥存储 | — |
+| `.cred.key` | 旧版 AES 主密钥兼容回退 | 同上（仅 SecretStorage 不可用或旧数据迁移时读取） | — |
 | `active.json` | 跨窗口同步当前账号 ID | 同上 | 同上 |
 
 **凭据只存在本地磁盘，扩展不会上传任何账号信息到任何远端。**

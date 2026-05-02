@@ -3,6 +3,7 @@ import * as vscode from "vscode";
 import * as accountsStore_1 from "./accountsStore";
 import * as importParser_1 from "./importParser";
 import * as log_1 from "./log";
+import * as memoryCreds_1 from "./memoryCreds";
 import * as autoSwitch_1 from "./autoSwitch";
 import * as smartSwitch_1 from "./smartSwitch";
 const UI_KEYS = {
@@ -260,7 +261,7 @@ export class SidebarProvider {
             case 'credentials':
                 // 直接复制「账号+密码」。旧的 showCredentials 弹框仍可通过命令面板调用。
                 if (msg.id) {
-                    void vscode.commands.executeCommand('windsurfSwitch._copyCred', {
+                    void this.copyCredentialToClipboard({
                         id: String(msg.id),
                         field: 'both'
                     });
@@ -278,7 +279,7 @@ export class SidebarProvider {
                 return;
             case 'copyCred':
                 if (msg.id && msg.field) {
-                    void vscode.commands.executeCommand('windsurfSwitch._copyCred', {
+                    void this.copyCredentialToClipboard({
                         id: String(msg.id),
                         field: String(msg.field)
                     });
@@ -351,6 +352,71 @@ export class SidebarProvider {
             }
             default:
                 (0, log_1.log)('sidebar: unknown message', cmd);
+        }
+    }
+    /**
+     * Copy requests are handled inside the provider instead of a globally
+     * registered VS Code command, so other extensions cannot invoke the
+     * credential-copy path with a guessed account id.
+     */
+    async copyCredentialToClipboard(args) {
+        const accountId = args?.id || '';
+        const field = (args?.field || '').toLowerCase();
+        if (!accountId || !field) {
+            return;
+        }
+        try {
+            // Prefer the in-memory cache (populated on activation + after every
+            // add / fix) — avoids spawning PowerShell for DPAPI on every click.
+            let email = '';
+            let password = '';
+            const cached = await (0, memoryCreds_1.getCreds)(accountId);
+            if (cached && (cached.email || cached.password)) {
+                email = cached.email;
+                password = cached.password;
+            }
+            else {
+                const loaded = await (0, accountsStore_1.loadAccountWithSecrets)(accountId);
+                if (!loaded) {
+                    this.postStatus('无法读取该账号', 'error');
+                    return;
+                }
+                email = loaded.email;
+                password = loaded.password;
+            }
+            if (field === 'email') {
+                if (!email) {
+                    this.postStatus('账号邮箱为空', 'warn');
+                    return;
+                }
+                await vscode.env.clipboard.writeText(email);
+                this.postStatus(`已复制邮箱 ${email}`, 'success');
+                return;
+            }
+            if (field === 'password') {
+                if (!password) {
+                    this.postStatus('该账号没有存储密码', 'warn');
+                    return;
+                }
+                await vscode.env.clipboard.writeText(password);
+                this.postStatus('已复制密码（请尽快粘贴并清空剪贴板）', 'success');
+                return;
+            }
+            if (field === 'both') {
+                if (!password) {
+                    this.postStatus('该账号没有存储密码', 'warn');
+                    return;
+                }
+                const text = `账号: ${email}    密码: ${password}`;
+                await vscode.env.clipboard.writeText(text);
+                this.postStatus('已复制 账号+密码', 'success');
+                return;
+            }
+            this.postStatus(`未知字段: ${field}`, 'error');
+        }
+        catch (e) {
+            (0, log_1.log)('copyCredentialToClipboard failed:', e?.message || e);
+            this.postStatus(`复制失败: ${e?.message || e}`, 'error');
         }
     }
     getHtml(webview) {

@@ -4,13 +4,15 @@ import * as path from "path";
 import * as crypto from "crypto";
 import * as constants_1 from "./constants";
 import * as log_1 from "./log";
+import type * as vscode from "vscode";
 // ---------------------------------------------------------------------------
-// Cross-platform fallback (macOS / Linux): AES-256-GCM with a local key file.
+// Cross-platform fallback (macOS / Linux): AES-256-GCM with SecretStorage key.
 //
 // Windows DPAPI shells out to `powershell.exe` which doesn't exist on POSIX.
-// On non-Windows platforms we instead derive a per-user key stored at
-// <accountsDir>/.cred.key (mode 0600) and encrypt each value with
-// AES-256-GCM. The output is `aesgcm:<base64(iv || tag || cipher)>` — the
+// On non-Windows platforms we instead use a per-user AES key stored in VS Code
+// SecretStorage. If SecretStorage is unavailable (tests / unusual hosts), we
+// fall back to the legacy <accountsDir>/.cred.key file (mode 0600).
+// The output is `aesgcm:<base64(iv || tag || cipher)>` — the
 // `aesgcm:` prefix lets us distinguish from any DPAPI ciphertext that might
 // have been carried over from a Windows install (we'd return '' rather than
 // silently mis-decrypt). Same string length category as DPAPI base64, so it
@@ -18,32 +20,57 @@ import * as log_1 from "./log";
 // schema changes.
 // ---------------------------------------------------------------------------
 const NODE_CIPHER_PREFIX = 'aesgcm:';
+const NODE_SECRET_KEY_ID = 'windsurf:local-aes-key:v1';
 const NODE_KEY_BYTES = 32; // AES-256
 const NODE_IV_BYTES = 12;
 const NODE_TAG_BYTES = 16;
 let cachedNodeKey = null;
-let cachedNodeKeyPath = '';
+let cachedNodeKeySource = '';
+let secretStorage: vscode.SecretStorage | undefined;
+export function attachSecretStorage(secrets: vscode.SecretStorage): void {
+    secretStorage = secrets;
+}
 function nodeKeyFilePath() {
     return path.join((0, constants_1.getAccountsDir)(), '.cred.key');
 }
-function getOrCreateNodeKey() {
-    const keyPath = nodeKeyFilePath();
-    if (cachedNodeKey && cachedNodeKeyPath === keyPath) {
-        return cachedNodeKey;
+function decodeNodeKey(raw) {
+    if (!raw) {
+        return undefined;
     }
+    try {
+        const buf = Buffer.from(raw, 'base64');
+        return buf.length === NODE_KEY_BYTES ? buf : undefined;
+    }
+    catch {
+        return undefined;
+    }
+}
+function readLegacyNodeKey() {
+    const keyPath = nodeKeyFilePath();
     try {
         const buf = fs.readFileSync(keyPath);
         if (buf.length === NODE_KEY_BYTES) {
-            cachedNodeKey = buf;
-            cachedNodeKeyPath = keyPath;
             return buf;
         }
-        (0, log_1.log)(`nodeKey ${keyPath} has unexpected length ${buf.length}, regenerating`);
+        (0, log_1.log)(`nodeKey ${keyPath} has unexpected length ${buf.length}`);
     }
     catch (e) {
         if (e?.code !== 'ENOENT') {
-            (0, log_1.log)(`nodeKey read failed (${e?.message || e}), regenerating`);
+            (0, log_1.log)(`nodeKey read failed (${e?.message || e})`);
         }
+    }
+    return undefined;
+}
+function getOrCreateLegacyNodeKey() {
+    const keyPath = nodeKeyFilePath();
+    if (cachedNodeKey && cachedNodeKeySource === keyPath) {
+        return cachedNodeKey;
+    }
+    const existing = readLegacyNodeKey();
+    if (existing) {
+        cachedNodeKey = existing;
+        cachedNodeKeySource = keyPath;
+        return existing;
     }
     fs.mkdirSync(path.dirname(keyPath), { recursive: true });
     const fresh = crypto.randomBytes(NODE_KEY_BYTES);
@@ -55,21 +82,47 @@ function getOrCreateNodeKey() {
         // best-effort; some FS (e.g. exFAT) don't honour modes
     }
     cachedNodeKey = fresh;
-    cachedNodeKeyPath = keyPath;
+    cachedNodeKeySource = keyPath;
     return fresh;
 }
-function nodeProtect(plain) {
+async function getOrCreateNodeKey() {
+    const source = secretStorage ? 'secret-storage' : nodeKeyFilePath();
+    if (cachedNodeKey && cachedNodeKeySource === source) {
+        return cachedNodeKey;
+    }
+    if (!secretStorage) {
+        return getOrCreateLegacyNodeKey();
+    }
+    try {
+        const stored = decodeNodeKey(await secretStorage.get(NODE_SECRET_KEY_ID));
+        if (stored) {
+            cachedNodeKey = stored;
+            cachedNodeKeySource = source;
+            return stored;
+        }
+        const legacy = readLegacyNodeKey();
+        const key = legacy || crypto.randomBytes(NODE_KEY_BYTES);
+        await secretStorage.store(NODE_SECRET_KEY_ID, key.toString('base64'));
+        cachedNodeKey = key;
+        cachedNodeKeySource = source;
+        return key;
+    }
+    catch (e) {
+        (0, log_1.log)(`SecretStorage nodeKey failed (${e?.message || e}), using legacy key file`);
+        return getOrCreateLegacyNodeKey();
+    }
+}
+function nodeProtect(plain, key) {
     if (!plain) {
         return '';
     }
-    const key = getOrCreateNodeKey();
     const iv = crypto.randomBytes(NODE_IV_BYTES);
     const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
     const enc = Buffer.concat([cipher.update(plain, 'utf8'), cipher.final()]);
     const tag = cipher.getAuthTag();
     return NODE_CIPHER_PREFIX + Buffer.concat([iv, tag, enc]).toString('base64');
 }
-function nodeUnprotect(token) {
+function nodeUnprotect(token, key) {
     if (!token) {
         return '';
     }
@@ -93,7 +146,6 @@ function nodeUnprotect(token) {
     const tag = buf.subarray(NODE_IV_BYTES, NODE_IV_BYTES + NODE_TAG_BYTES);
     const enc = buf.subarray(NODE_IV_BYTES + NODE_TAG_BYTES);
     try {
-        const key = getOrCreateNodeKey();
         const decipher = crypto.createDecipheriv('aes-256-gcm', key, iv);
         decipher.setAuthTag(tag);
         return Buffer.concat([decipher.update(enc), decipher.final()]).toString('utf8');
@@ -233,7 +285,8 @@ export async function dpapiUnprotectBatch(ciphers: Array<string | null | undefin
         return ciphers.map(() => '');
     }
     if (process.platform !== 'win32') {
-        return ciphers.map(c => (c ? nodeUnprotect(c) : ''));
+        const key = await getOrCreateNodeKey();
+        return ciphers.map(c => (c ? nodeUnprotect(c, key) : ''));
     }
     const input = ciphers.map(c => c || '').join('\n');
     const started = Date.now();
@@ -278,7 +331,8 @@ export async function dpapiProtectBatch(plaintexts: Array<string | null | undefi
         return plaintexts.map(() => '');
     }
     if (process.platform !== 'win32') {
-        return plaintexts.map(p => (p ? nodeProtect(p) : ''));
+        const key = await getOrCreateNodeKey();
+        return plaintexts.map(p => (p ? nodeProtect(p, key) : ''));
     }
     // Encode each plaintext as base64(UTF8(plain)) so multi-line / non-ASCII
     // values can't break the line-based wire format.

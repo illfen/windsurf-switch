@@ -2,7 +2,7 @@
   "name": "windsurf-switch",
   "displayName": "Windsurf Switch",
   "description": "Windsurf 多账号无感切换 — 卡片化 sidebar、不弹浏览器静默换号、跨窗口同步、一键打补丁；账号库与桌面版 windsurf-manager-desktop 共享。Windows / macOS / Linux 通用。",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "publisher": "lango",
   "engines": {
     "vscode": "^1.74.0"
@@ -163,11 +163,6 @@
         "category": "Windsurf Switch"
       },
       {
-        "command": "windsurfSwitch._copyCred",
-        "title": "内部：复制凭据（供 webview 调用）",
-        "category": "Windsurf Switch"
-      },
-      {
         "command": "windsurfSwitch._refreshCurrentSynced",
         "title": "内部：刷新当前同步账号（供 webview 调用）",
         "category": "Windsurf Switch"
@@ -235,10 +230,6 @@
         },
         {
           "command": "windsurfSwitch._submitBatchFromModal",
-          "when": "false"
-        },
-        {
-          "command": "windsurfSwitch._copyCred",
           "when": "false"
         },
         {

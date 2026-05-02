@@ -41,6 +41,7 @@ const constants_1 = __importStar(require("./constants"));
 const log_1 = __importStar(require("./log"));
 const importParser_1 = __importStar(require("./importParser"));
 const memoryCreds_1 = __importStar(require("./memoryCreds"));
+const dpapi_1 = __importStar(require("./dpapi"));
 const seamlessSwitch_1 = __importStar(require("./seamlessSwitch"));
 const sidebar_1 = __importStar(require("./sidebar"));
 const tokens_1 = __importStar(require("./tokens"));
@@ -644,6 +645,7 @@ function activate(context) {
         // on most runs (only the first-ever decrypt or a ciphertext change
         // forces a PowerShell round-trip).
         (0, memoryCreds_1.attachSecretStorage)(context.secrets);
+        (0, dpapi_1.attachSecretStorage)(context.secrets);
         const unsubscribe = (0, memoryCreds_1.onStatusChange)(status => {
             if (status.state === 'ready') {
                 (0, log_1.log)(`creds cache ready: total=${status.total} hit=${status.hitCount} miss=${status.missCount} in ${status.durationMs}ms`);
@@ -765,15 +767,41 @@ function deactivate() {
 // ---------------------------------------------------------------------------
 function registerCommands(context, sidebar) {
     const sub = context.subscriptions;
-    sub.push(vscode.commands.registerCommand('windsurfSwitch.reloadSidebar', () => sidebar.reload()), vscode.commands.registerCommand('windsurfSwitch.openAccountsFile', () => {
+    sub.push(vscode.commands.registerCommand('windsurfSwitch.reloadSidebar', () => sidebar.reload()));
+    sub.push(vscode.commands.registerCommand('windsurfSwitch.openAccountsFile', () => {
         void vscode.env.openExternal(vscode.Uri.file((0, accountsStore_1.getAccountsDir)()));
-    }), vscode.commands.registerCommand('windsurfSwitch.showOutput', () => {
+    }));
+    sub.push(vscode.commands.registerCommand('windsurfSwitch.showOutput', () => {
         (0, log_1.getOutputChannel)().show(true);
-    }), vscode.commands.registerCommand('windsurfSwitch.switchAccount', () => pickAndSwitch(context, sidebar)), vscode.commands.registerCommand('windsurfSwitch.switchAccountById', (accountId) => switchById(context, sidebar, accountId)), vscode.commands.registerCommand('windsurfSwitch.switchByIdToken', () => cmdSwitchByIdToken()), vscode.commands.registerCommand('windsurfSwitch.addAccount', () => cmdAddAccount(sidebar)), vscode.commands.registerCommand('windsurfSwitch.batchImport', () => cmdBatchImport(sidebar)), vscode.commands.registerCommand('windsurfSwitch._submitAddFromModal', (args) => cmdSubmitAddFromModal(sidebar, args)), vscode.commands.registerCommand('windsurfSwitch._submitBatchFromModal', (args) => cmdSubmitBatchFromModal(sidebar, args)), vscode.commands.registerCommand('windsurfSwitch._copyCred', (args) => cmdCopyCred(sidebar, args)), vscode.commands.registerCommand('windsurfSwitch.deleteAccountById', (accountId) => deleteById(context, sidebar, accountId)), vscode.commands.registerCommand('windsurfSwitch.editRemarkById', (accountId) => editRemarkById(sidebar, accountId)), vscode.commands.registerCommand('windsurfSwitch.showCredentials', (accountId) => showCredentials(sidebar, accountId)), vscode.commands.registerCommand('windsurfSwitch.refreshAccount', (accountId) => refreshOne(context, sidebar, accountId)), vscode.commands.registerCommand('windsurfSwitch.refreshAll', () => refreshAll(context, sidebar)), vscode.commands.registerCommand('windsurfSwitch.fixCredentialsById', (accountId) => fixCredentialsById(sidebar, accountId)), vscode.commands.registerCommand('windsurfSwitch.listAccounts', () => cmdListAccounts()),
+    }));
+    sub.push(vscode.commands.registerCommand('windsurfSwitch.switchAccount', () => pickAndSwitch(context, sidebar)));
+    sub.push(vscode.commands.registerCommand('windsurfSwitch.switchAccountById', (accountId) => switchById(context, sidebar, accountId)));
+    sub.push(vscode.commands.registerCommand('windsurfSwitch.switchByIdToken', () => cmdSwitchByIdToken()));
+    sub.push(vscode.commands.registerCommand('windsurfSwitch.addAccount', () => cmdAddAccount(sidebar)));
+    sub.push(vscode.commands.registerCommand('windsurfSwitch.batchImport', () => cmdBatchImport(sidebar)));
+    sub.push(vscode.commands.registerCommand('windsurfSwitch._submitAddFromModal', (args) => cmdSubmitAddFromModal(sidebar, args)));
+    sub.push(vscode.commands.registerCommand('windsurfSwitch._submitBatchFromModal', (args) => cmdSubmitBatchFromModal(sidebar, args)));
+    sub.push(vscode.commands.registerCommand('windsurfSwitch.deleteAccountById', (accountId) => deleteById(context, sidebar, accountId)));
+    sub.push(vscode.commands.registerCommand('windsurfSwitch.editRemarkById', (accountId) => editRemarkById(sidebar, accountId)));
+    sub.push(vscode.commands.registerCommand('windsurfSwitch.showCredentials', (accountId) => showCredentials(sidebar, accountId)));
+    sub.push(vscode.commands.registerCommand('windsurfSwitch.refreshAccount', (accountId) => refreshOne(context, sidebar, accountId)));
+    sub.push(vscode.commands.registerCommand('windsurfSwitch.refreshAll', () => refreshAll(context, sidebar)));
+    sub.push(vscode.commands.registerCommand('windsurfSwitch.fixCredentialsById', (accountId) => fixCredentialsById(sidebar, accountId)));
+    sub.push(vscode.commands.registerCommand('windsurfSwitch.listAccounts', () => cmdListAccounts()));
     // --- Smart switch / auto switch ---
-    vscode.commands.registerCommand('windsurfSwitch.smartSwitch', () => cmdSmartSwitch(context, sidebar)), vscode.commands.registerCommand('windsurfSwitch._refreshCurrentSynced', () => cmdRefreshCurrentSynced(context, sidebar)), vscode.commands.registerCommand('windsurfSwitch.diagnoseSession', () => cmdDiagnoseSession(context)), vscode.commands.registerCommand('windsurfSwitch._smartSwitchFromSidebar', (args) => cmdSmartSwitchFromSidebar(context, sidebar, args)), vscode.commands.registerCommand('windsurfSwitch.resetSmartCooldown', () => cmdResetSmartCooldown(context, sidebar)), vscode.commands.registerCommand('windsurfSwitch.editLogPatterns', () => cmdEditLogPatterns(context)), vscode.commands.registerCommand('windsurfSwitch._toggleAuto', (args) => cmdToggleAuto(context, sidebar, args)), vscode.commands.registerCommand('windsurfSwitch._setPollingInterval', (args) => cmdSetPollingInterval(context, sidebar, args)), vscode.commands.registerCommand('windsurfSwitch._setLowQuotaThreshold', (args) => cmdSetLowQuotaThreshold(context, sidebar, args)),
+    sub.push(vscode.commands.registerCommand('windsurfSwitch.smartSwitch', () => cmdSmartSwitch(context, sidebar)));
+    sub.push(vscode.commands.registerCommand('windsurfSwitch._refreshCurrentSynced', () => cmdRefreshCurrentSynced(context, sidebar)));
+    sub.push(vscode.commands.registerCommand('windsurfSwitch.diagnoseSession', () => cmdDiagnoseSession(context)));
+    sub.push(vscode.commands.registerCommand('windsurfSwitch._smartSwitchFromSidebar', (args) => cmdSmartSwitchFromSidebar(context, sidebar, args)));
+    sub.push(vscode.commands.registerCommand('windsurfSwitch.resetSmartCooldown', () => cmdResetSmartCooldown(context, sidebar)));
+    sub.push(vscode.commands.registerCommand('windsurfSwitch.editLogPatterns', () => cmdEditLogPatterns(context)));
+    sub.push(vscode.commands.registerCommand('windsurfSwitch._toggleAuto', (args) => cmdToggleAuto(context, sidebar, args)));
+    sub.push(vscode.commands.registerCommand('windsurfSwitch._setPollingInterval', (args) => cmdSetPollingInterval(context, sidebar, args)));
+    sub.push(vscode.commands.registerCommand('windsurfSwitch._setLowQuotaThreshold', (args) => cmdSetLowQuotaThreshold(context, sidebar, args)));
     // --- Windsurf core patch (no-browser smart switch) ---
-    vscode.commands.registerCommand('windsurfSwitch.patchWindsurf', () => cmdPatchWindsurf(context)), vscode.commands.registerCommand('windsurfSwitch.unpatchWindsurf', () => cmdUnpatchWindsurf(context)), vscode.commands.registerCommand('windsurfSwitch.checkPatchStatus', () => cmdCheckPatchStatus()));
+    sub.push(vscode.commands.registerCommand('windsurfSwitch.patchWindsurf', () => cmdPatchWindsurf(context)));
+    sub.push(vscode.commands.registerCommand('windsurfSwitch.unpatchWindsurf', () => cmdUnpatchWindsurf(context)));
+    sub.push(vscode.commands.registerCommand('windsurfSwitch.checkPatchStatus', () => cmdCheckPatchStatus()));
 }
 // ---------------------------------------------------------------------------
 // Windsurf core patch — apply / restore / status
@@ -1270,73 +1298,6 @@ async function showCredentials(sidebar, accountId) {
         return;
     }
     await sidebar.openModal('creds', { id: accountId, email: account.email });
-}
-/**
- * Handle copy requests posted from the in-sidebar creds modal.
- * field: 'email' | 'password' | 'both'
- *
- * Format for 'both' matches the user's spec: `账号: <email>    密码: <password>`.
- */
-async function cmdCopyCred(sidebar, args) {
-    const accountId = args?.id || '';
-    const field = (args?.field || '').toLowerCase();
-    if (!accountId || !field) {
-        return;
-    }
-    try {
-        // Prefer the in-memory cache (populated on activation + after every
-        // add / fix) — avoids spawning PowerShell for DPAPI on every click.
-        let email = '';
-        let password = '';
-        const cached = await (0, memoryCreds_1.getCreds)(accountId);
-        if (cached && (cached.email || cached.password)) {
-            email = cached.email;
-            password = cached.password;
-        }
-        else {
-            const loaded = await (0, accountsStore_1.loadAccountWithSecrets)(accountId);
-            if (!loaded) {
-                sidebar.postStatus('无法读取该账号', 'error');
-                return;
-            }
-            email = loaded.email;
-            password = loaded.password;
-        }
-        const full = { email, password };
-        if (field === 'email') {
-            if (!full.email) {
-                sidebar.postStatus('账号邮箱为空', 'warn');
-                return;
-            }
-            await vscode.env.clipboard.writeText(full.email);
-            sidebar.postStatus(`已复制邮箱 ${full.email}`, 'success');
-            return;
-        }
-        if (field === 'password') {
-            if (!full.password) {
-                sidebar.postStatus('该账号没有存储密码', 'warn');
-                return;
-            }
-            await vscode.env.clipboard.writeText(full.password);
-            sidebar.postStatus('已复制密码（请尽快粘贴并清空剪贴板）', 'success');
-            return;
-        }
-        if (field === 'both') {
-            if (!full.password) {
-                sidebar.postStatus('该账号没有存储密码', 'warn');
-                return;
-            }
-            const text = `账号: ${full.email}    密码: ${full.password}`;
-            await vscode.env.clipboard.writeText(text);
-            sidebar.postStatus('已复制 账号+密码', 'success');
-            return;
-        }
-        sidebar.postStatus(`未知字段: ${field}`, 'error');
-    }
-    catch (e) {
-        (0, log_1.log)('cmdCopyCred failed:', e?.message || e);
-        sidebar.postStatus(`复制失败: ${e?.message || e}`, 'error');
-    }
 }
 // ---------------------------------------------------------------------------
 // Refresh plan / quota
