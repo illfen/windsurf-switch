@@ -1,0 +1,256 @@
+{
+  "name": "windsurf-switch",
+  "displayName": "Windsurf Switch",
+  "description": "Windsurf 多账号无感切换 — 卡片化 sidebar、不弹浏览器静默换号、跨窗口同步、一键打补丁；账号库与桌面版 windsurf-manager-desktop 共享。Windows / macOS / Linux 通用。",
+  "version": "1.0.0",
+  "publisher": "lango",
+  "engines": {
+    "vscode": "^1.74.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "main": "./out/extension.js",
+  "extensionKind": [
+    "ui"
+  ],
+  "activationEvents": [
+    "onStartupFinished",
+    "onView:windsurfSwitch.sidebar"
+  ],
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "windsurfSwitch",
+          "title": "Windsurf Switch",
+          "icon": "resources/icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "windsurfSwitch": [
+        {
+          "type": "webview",
+          "id": "windsurfSwitch.sidebar",
+          "name": "",
+          "contextualTitle": "Windsurf Switch"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "windsurfSwitch.switchAccount",
+        "title": "切换账号 (QuickPick)",
+        "category": "Windsurf Switch",
+        "icon": "$(arrow-swap)"
+      },
+      {
+        "command": "windsurfSwitch.switchAccountById",
+        "title": "切到指定账号",
+        "category": "Windsurf Switch",
+        "enablement": "false"
+      },
+      {
+        "command": "windsurfSwitch.switchByIdToken",
+        "title": "用 IdToken 切号 (调试)",
+        "category": "Windsurf Switch"
+      },
+      {
+        "command": "windsurfSwitch.addAccount",
+        "title": "添加账号",
+        "category": "Windsurf Switch",
+        "icon": "$(add)"
+      },
+      {
+        "command": "windsurfSwitch.batchImport",
+        "title": "批量导入",
+        "category": "Windsurf Switch",
+        "icon": "$(cloud-upload)"
+      },
+      {
+        "command": "windsurfSwitch.deleteAccountById",
+        "title": "删除账号 (by id)",
+        "category": "Windsurf Switch",
+        "enablement": "false"
+      },
+      {
+        "command": "windsurfSwitch.editRemarkById",
+        "title": "编辑备注 (by id)",
+        "category": "Windsurf Switch",
+        "enablement": "false"
+      },
+      {
+        "command": "windsurfSwitch.showCredentials",
+        "title": "查看账号凭据 (by id)",
+        "category": "Windsurf Switch",
+        "enablement": "false"
+      },
+      {
+        "command": "windsurfSwitch.refreshAccount",
+        "title": "刷新 Plan / Quota (by id)",
+        "category": "Windsurf Switch",
+        "enablement": "false"
+      },
+      {
+        "command": "windsurfSwitch.fixCredentialsById",
+        "title": "修复凭据 (by id)",
+        "category": "Windsurf Switch",
+        "enablement": "false"
+      },
+      {
+        "command": "windsurfSwitch.refreshAll",
+        "title": "批量刷新",
+        "category": "Windsurf Switch",
+        "icon": "$(sync)"
+      },
+      {
+        "command": "windsurfSwitch.reloadSidebar",
+        "title": "重新加载账号列表",
+        "category": "Windsurf Switch",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "windsurfSwitch.openAccountsFile",
+        "title": "打开 accounts.json 目录",
+        "category": "Windsurf Switch",
+        "icon": "$(folder)"
+      },
+      {
+        "command": "windsurfSwitch.listAccounts",
+        "title": "账号列表 (Output)",
+        "category": "Windsurf Switch"
+      },
+      {
+        "command": "windsurfSwitch.showOutput",
+        "title": "显示日志",
+        "category": "Windsurf Switch"
+      },
+      {
+        "command": "windsurfSwitch.smartSwitch",
+        "title": "智能切号",
+        "category": "Windsurf Switch",
+        "icon": "$(rocket)"
+      },
+      {
+        "command": "windsurfSwitch.resetSmartCooldown",
+        "title": "重置智能切号冷却",
+        "category": "Windsurf Switch"
+      },
+      {
+        "command": "windsurfSwitch.diagnoseSession",
+        "title": "诊断登录会话（调试）",
+        "category": "Windsurf Switch"
+      },
+      {
+        "command": "windsurfSwitch.editLogPatterns",
+        "title": "编辑日志监控关键词",
+        "category": "Windsurf Switch"
+      },
+      {
+        "command": "windsurfSwitch.patchWindsurf",
+        "title": "给 Windsurf 打补丁（启用无浏览器切号）",
+        "category": "Windsurf Switch"
+      },
+      {
+        "command": "windsurfSwitch.unpatchWindsurf",
+        "title": "恢复 Windsurf（卸载补丁）",
+        "category": "Windsurf Switch"
+      },
+      {
+        "command": "windsurfSwitch.checkPatchStatus",
+        "title": "查看 Windsurf 补丁状态",
+        "category": "Windsurf Switch"
+      }
+    ],
+    "menus": {
+      "commandPalette": [
+        {
+          "command": "windsurfSwitch.switchAccountById",
+          "when": "false"
+        },
+        {
+          "command": "windsurfSwitch.deleteAccountById",
+          "when": "false"
+        },
+        {
+          "command": "windsurfSwitch.editRemarkById",
+          "when": "false"
+        },
+        {
+          "command": "windsurfSwitch.showCredentials",
+          "when": "false"
+        },
+        {
+          "command": "windsurfSwitch.refreshAccount",
+          "when": "false"
+        },
+        {
+          "command": "windsurfSwitch.fixCredentialsById",
+          "when": "false"
+        },
+        {
+          "command": "windsurfSwitch._submitAddFromModal",
+          "when": "false"
+        },
+        {
+          "command": "windsurfSwitch._submitBatchFromModal",
+          "when": "false"
+        },
+        {
+          "command": "windsurfSwitch._copyCred",
+          "when": "false"
+        },
+        {
+          "command": "windsurfSwitch._smartSwitchFromSidebar",
+          "when": "false"
+        },
+        {
+          "command": "windsurfSwitch._toggleAuto",
+          "when": "false"
+        },
+        {
+          "command": "windsurfSwitch._setPollingInterval",
+          "when": "false"
+        },
+        {
+          "command": "windsurfSwitch._refreshCurrentSynced",
+          "when": "false"
+        }
+      ],
+      "view/title": [
+        {
+          "command": "windsurfSwitch.showOutput",
+          "when": "view == windsurfSwitch.sidebar",
+          "group": "overflow@1"
+        },
+        {
+          "command": "windsurfSwitch.openAccountsFile",
+          "when": "view == windsurfSwitch.sidebar",
+          "group": "overflow@2"
+        },
+        {
+          "command": "windsurfSwitch.reloadSidebar",
+          "when": "view == windsurfSwitch.sidebar",
+          "group": "overflow@3"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "package": "vsce package --no-dependencies"
+  },
+  "devDependencies": {
+    "@vscode/vsce": "^3.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/illfen/windsurf-switch.git"
+  },
+  "homepage": "https://github.com/illfen/windsurf-switch#readme",
+  "bugs": {
+    "url": "https://github.com/illfen/windsurf-switch/issues"
+  },
+  "author": "illfen",
+  "license": "MIT"
+}
