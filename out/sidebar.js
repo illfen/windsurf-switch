@@ -1824,6 +1824,12 @@ const JS = /* javascript */ `
     function hasDailyQuota(a) { return (a.dailyRemainPct || 0) > 0; }
     function hasWeeklyQuota(a) { return (a.weeklyRemainPct || 0) > 0; }
     function parseExpiry(a) {
+        // Free 账号没有真正的订阅到期 —— Windsurf plan API 对 Free 返回的
+        // planEnd 实际是下一个月度计费周期重置（~30 天后），原样当作
+        // 「到期时间」会误显示为「30 天后到期」。试用结束降级到 Free 时
+        // 这个 bug 最明显。统一返回 null：排序时沉底，fmtExpiry 走专门
+        // 的「免费版」分支。Trial / Pro / Teams 不受影响。
+        if (isFree(a)) return null;
         if (!a.expiresAt) return null;
         const t = Date.parse(a.expiresAt);
         return Number.isFinite(t) ? t : null;
@@ -1891,6 +1897,9 @@ const JS = /* javascript */ `
 
     // ---------- formatting ------------------------------------------------
     function fmtExpiry(a) {
+        // Free：parseExpiry 已返回 null（见上面注释）。这里直接给确定文案，
+        // 避免和「到期未知」混淆 —— 「免费版」是一个稳定状态，不是数据缺失。
+        if (isFree(a)) return { exact: '免费版', desc: '免费版', tone: 'muted' };
         const t = parseExpiry(a);
         if (!t) return { exact: '到期未知', desc: '到期未知', tone: 'muted' };
         const delta = t - Date.now();

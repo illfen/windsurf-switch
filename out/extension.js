@@ -1614,8 +1614,13 @@ async function cmdExportAccounts() {
     (0, log_1.log)(`exportAccounts: ${lines.length} ok, ${skipped} skipped`);
 }
 // ---------------------------------------------------------------------------
-// Clear expired accounts — subscription period (`expiresAt`, ISO from plan
-// API) has elapsed. Free accounts without an expiresAt are NOT touched.
+// Clear accounts — by category (已到期 / 免费). 用户可同时勾选两类一并清掉。
+//   · 已到期：expiresAt 已过 —— 订阅过期但未自动降级 Free 的账号
+//   · 免费：planName === 'free' —— 含试用结束后被降级的账号（plan API
+//     给这种账号一个~30 天后的 planEnd 当作下一个计费周期重置，所以
+//     仅靠 isExpired 抓不到）
+// 两类去重并集后逐个删除。当前活跃账号若在删除清单里，同步走标准
+// clearCurrentAccount 流程。
 // ---------------------------------------------------------------------------
 async function cmdClearExpiredAccounts(context, sidebar) {
     const accounts = await (0, accountsStore_1.loadManagerAccounts)();
@@ -1627,14 +1632,64 @@ async function cmdClearExpiredAccounts(context, sidebar) {
         const t = Date.parse(a.expiresAt);
         return Number.isFinite(t) && t < now;
     };
-    const targets = accounts.filter(isExpired);
+    const isFree = (a) => (a.planName || '').toLowerCase() === 'free';
+    const expired = accounts.filter(isExpired);
+    const free = accounts.filter(isFree);
+    if (expired.length === 0 && free.length === 0) {
+        vscode.window.showInformationMessage('没有可清理的账号（无已到期 · 无免费账号）。');
+        return;
+    }
+    // Build category options. Free 默认不勾选，避免用户故意保留的 Free 备号被误删。
+    const items = [];
+    if (expired.length > 0) {
+        items.push({
+            label: '已到期账号',
+            description: `${expired.length} 个 · 订阅期 expiresAt 已过`,
+            picked: true,
+            kind: 'expired'
+        });
+    }
+    if (free.length > 0) {
+        items.push({
+            label: '免费账号',
+            description: `${free.length} 个 · 含试用结束后降级`,
+            picked: false,
+            kind: 'free'
+        });
+    }
+    let picked;
+    if (items.length === 1) {
+        // 只有一类候选时直接进入确认流程，不要逼用户多按一次回车。
+        picked = items;
+    }
+    else {
+        const sel = await vscode.window.showQuickPick(items, {
+            canPickMany: true,
+            title: '选择要清理的账号类别',
+            placeHolder: '空格切换勾选 · 回车确认'
+        });
+        if (!sel || sel.length === 0) {
+            return;
+        }
+        picked = sel;
+    }
+    // 两类可能重叠（既到期又是 Free），按 id 去重并集。
+    const targetMap = new Map();
+    if (picked.some(p => p.kind === 'expired')) {
+        for (const a of expired)
+            targetMap.set(a.id, a);
+    }
+    if (picked.some(p => p.kind === 'free')) {
+        for (const a of free)
+            targetMap.set(a.id, a);
+    }
+    const targets = Array.from(targetMap.values());
     if (targets.length === 0) {
-        vscode.window.showInformationMessage('没有已到期的账号。');
         return;
     }
     const preview = targets.slice(0, 5).map(a => a.email).join('\n  · ');
     const more = targets.length > 5 ? `\n  · …还有 ${targets.length - 5} 个` : '';
-    const ans = await vscode.window.showWarningMessage(`将删除 ${targets.length} 个已到期账号：\n\n  · ${preview}${more}\n\n此操作不可撤销。`, { modal: true }, '删除');
+    const ans = await vscode.window.showWarningMessage(`将删除 ${targets.length} 个账号：\n\n  · ${preview}${more}\n\n此操作不可撤销。`, { modal: true }, '删除');
     if (ans !== '删除') {
         return;
     }
@@ -1665,7 +1720,7 @@ async function cmdClearExpiredAccounts(context, sidebar) {
         vscode.window.showWarningMessage(`已清理 ${ok} 个，${fail} 个失败。详情见日志。`);
     }
     else {
-        statusOk(`已清理 ${ok} 个到期账号`);
+        statusOk(`已清理 ${ok} 个账号`);
     }
     await sidebar.reload();
 }

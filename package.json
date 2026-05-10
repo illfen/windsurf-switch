@@ -2,7 +2,7 @@
   "name": "windsurf-switch",
   "displayName": "Windsurf Switch",
   "description": "Windsurf 多账号无感切换 — 卡片化 sidebar、不弹浏览器静默换号、跨窗口同步、一键打补丁；账号库与桌面版 windsurf-manager-desktop 共享。Windows / macOS / Linux 通用。",
-  "version": "1.2.1",
+  "version": "1.2.2",
   "publisher": "lango",
   "engines": {
     "vscode": "^1.74.0"
@@ -130,7 +130,7 @@
       },
       {
         "command": "windsurfSwitch.clearExpiredAccounts",
-        "title": "清理已到期账号",
+        "title": "清理账号（已到期 / 免费）",
         "category": "Windsurf Switch",
         "icon": "$(trash)"
       },
